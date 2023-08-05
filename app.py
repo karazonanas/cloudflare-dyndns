@@ -17,6 +17,7 @@ def main():
     record = flask.request.args.get('record')
     ipv4 = flask.request.args.get('ipv4')
     ipv6 = flask.request.args.get('ipv6')
+    ipv6prefix = flask.request.args.get('ipv6prefix')
     cf = CloudFlare.CloudFlare(token=token)
     logger.info(f"request received: {flask.request.args}")
 
@@ -44,6 +45,8 @@ def main():
                                             'name': '{}.{}'.format(record, zone), 'match': 'all', 'type': 'A'})
         aaaa_record = cf.zones.dns_records.get(zones[0]['id'], params={
                                                'name': '{}.{}'.format(record, zone), 'match': 'all', 'type': 'AAAA'})
+        txt_record = cf.zones.dns_records.get(zones[0]['id'], params={
+                                                'name': '{}.{}'.format(record, zone), 'match': 'all', 'type': 'TXT'})
 
         if ipv4 is not None and not a_record:
             logger.error(f"A record for {record}.{zone} does not exist.")
@@ -60,6 +63,17 @@ def main():
         if ipv6 is not None and aaaa_record[0]['content'] != ipv6:
             cf.zones.dns_records.put(zones[0]['id'], aaaa_record[0]['id'], data={
                                      'name': aaaa_record[0]['name'], 'type': 'AAAA', 'content': ipv6, 'proxied': aaaa_record[0]['proxied'], 'ttl': aaaa_record[0]['ttl']})
+
+        if ipv6prefix is not None:
+            txt_record = cf.zones.dns_records.get(zones[0]['id'], params={
+                                                  'name': '{}.{}'.format(record, zone), 'match': 'all', 'type': 'TXT'})
+            if not txt_record:
+                cf.zones.dns_records.post(zones[0]['id'], data={
+                                          'name': '{}.{}'.format(record, zone), 'type': 'TXT', 'content': ipv6prefix, 'ttl': 120})
+            elif txt_record[0]['content'] != ipv6prefix:
+                cf.zones.dns_records.put(zones[0]['id'], txt_record[0]['id'], data={
+                                         'name': txt_record[0]['name'], 'type': 'TXT', 'content': ipv6prefix, 'ttl': txt_record[0]['ttl']})
+
     except CloudFlare.exceptions.CloudFlareAPIError as e:
         logger.error(e)
         return flask.jsonify({'status': 'error', 'message': str(e)}), 500
